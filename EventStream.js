@@ -11,9 +11,7 @@ EventStream.init = function() {
     (function($) {
         $.fn.getEventStream = function(eventType) {
             var s = new EventStream(function(event) {
-                for(var i = 0; i < this.listeners.length; i++) {
-                    this.listeners[i].onNext(event);
-                }
+				this._notifyListeners(event);
             });
             this.bind(eventType, s.onNext);
             return s;
@@ -21,12 +19,36 @@ EventStream.init = function() {
     })(jQuery);
 };
 
+EventStream.fromAnimationFrame = function() {
+    var s = new EventStream(function(timestamp) {
+        if(!this.stopAnimation) {
+            requestAnimFrame(this.onNext);
+        }
+		this._notifyListeners(timestamp);
+    });
+    s.stop = function() {
+        this.stopAnimation = true;
+    }
+    s.onNext();
+    return s;
+};
+
+EventStream.fromArray = function(arr) {
+	var s = new EventStream(function(next) {
+		this._notifyListeners(next);
+	});
+	s.start = function() {
+		for(var i = 0; i < arr.length; i++) {
+			s.onNext(arr[i]);
+		}
+	}
+	return s;
+};
+
 EventStream.fromInterval = function(ms) {
     var i = 0;
     var s = new EventStream(function () {
-        for(var j = 0; j < this.listeners.length; j++) {
-            this.listeners[j].onNext(i);
-        }
+		this._notifyListeners(i);
         i++;
     });
     var interval = setInterval(s.onNext, ms);
@@ -36,99 +58,87 @@ EventStream.fromInterval = function(ms) {
     return s;
 };
 
-EventStream.fromAnimationFrame = function() {
-    var s = new EventStream(function(timestamp) {
-        if(!this.stopAnimation) {
-            requestAnimFrame(this.onNext);
-        }
-        for(var i = 0; i < this.listeners.length; i++) {
-            this.listeners[i].onNext(timestamp);
-        }
-    });
-    s.stop = function() {
-        this.stopAnimation = true;
-    }
-    s.onNext();
-    return s;
-};
-
 EventStream.prototype = {
+	_newStream: function(onNext) {
+		var s = new EventStream(onNext, this);
+		this.listeners.push(s);
+		return s;
+	},
+
+	_notifyListeners: function(next) {
+		for(var i = 0; i < this.listeners.length; i++) {
+			this.listeners[i].onNext(next);
+		}
+	},
+
     addStreamOn: function(f, newStream) {
-        var splitStream = new EventStream(function(next) {
+		return this._newStream(function(next) {
             if(f(next)) {
                 var s = new EventStream(function(next) {
-                    for(var i = 0; i < this.listeners.length; i++) {
-                        this.listeners[i].onNext(next);
-                    }
+					this._notifyListeners(next);
                 }, splitStream);
                 newStream(s);
                 splitStream.listeners.push(s);
                 s.onNext(next);
             }
-            for(var i = 0; i < this.listeners.length; i++) {
-                this.listeners[i].onNext(next);
-            }
+			this._notifyListeners(next);
         });
-        this.listeners.push(splitStream);
-        return splitStream;
     },
+	
+	buffer: function(count) {
+		var buffer = [];
+		return this._newStream(function(next) {
+			buffer.push(next);
+			if(buffer.length >= count) {
+				this._notifyListeners(next);
+			}
+		});
+	},
     
     distinct: function(comparisonFn) {
-        var s = new EventStream(function(next) {
+        var s = this._newStream(function(next) {
             if(!this.lastValues.contains(next, comparisonFn)) {
                 this.lastValues.push(next);
-                for(var i = 0; i < this.listeners.length; i++) {
-                    this.listeners[i].onNext(next);
-                }
+				this._notifyListeners(next);
             }
         }, this);
         s.lastValues = [];
-        this.listeners.push(s);
         return s;
     },
     
     do: function(f) {
-        var s = new EventStream(function(next) {
+        this._newStream(function(next) {
             f(next);
         });
-        this.listeners.push(s);
     },
     
     filter: function(f) {
-        var s = new EventStream(function(next) {
+        return this._newStream(function(next) {
             if(f(next)) {
-                for(var i = 0; i < this.listeners.length; i++) {
-                    this.listeners[i].onNext(next);
-                }
+				this._notifyListeners(next);
             }
         }, this);
-        this.listeners.push(s);
-        return s;
     },
     
     groupBy: function(splitBy, newStream) {
         var self = this;
         var ss = {};
-        var s1 = new EventStream(function(next) {
+        return this._newStream(function(next) {
             var key = splitBy(next);
-            var s2 = ss[key];
-            if(!s2) {
-                s2 = new EventStream(function(next) {
-                    for(var i = 0; i < this.listeners.length; i++) {
-                        this.listeners[i].onNext(next);
-                    }
-                }, s1);
-                ss[key] = s2;
-                newStream(s2);
-                s1.listeners.push(s2);
+            var s = ss[key];
+            if(!s) {
+                s = this._newStream(function(next) {
+					this._notifyListeners(next);
+                });
+                ss[key] = s;
+                newStream(s);
+                this.listeners.push(s);
             }
-            s2.onNext({
+            s.onNext({
                 key: key,
                 val: next
             });
         });
-        this.listeners.push(s1);
-        return s1;
     },
     
     stop: function() {
@@ -143,54 +153,39 @@ EventStream.prototype = {
     
     stopOn: function(stopFn) {
         var self = this;
-        var s = new EventStream(function(next) {
+        return this._newStream(function(next) {
             if(stopFn(next)) {
                 self.stop();
             }
-            for(var i = 0; i < this.listeners.length; i++) {
-                this.listeners[i].onNext(next);
-            }
+			this._notifyListeners(next);
         });
-        this.listeners.push(s);
-        return s;
     },
     
     take: function(n) {
         var count = 0;
-        var s = new EventStream(function(next) {
-            for(var i = 0; i < this.listeners.length; i++) {
-                this.listeners[i].onNext(next);
-            }
+        return this._newStream(function(next) {
+			this._notifyListeners(next);
             if(count >= n - 1) {
                 this.stop();
             }
             count++;
-        }, this);
-        this.listeners.push(s);
-        return s;
+        });
     },
     
     throttle: function(timespanInMs) {
-        var s = new EventStream(function(next) {
+        return this._newStream(function(next) {
             var now = new Date() * 1;
             if(!this.lastDate || now > this.lastDate + timespanInMs) {
                 this.lastDate = now;
-                for(var i = 0; i < this.listeners.length; i++) {
-                    this.listeners[i].onNext(next);
-                }
+				this._notifyListeners(next);
             }
-        }, this);
-        this.listeners.push(s);
-        return s;
+        });
     },
     
     transform: function(f) {
-        var s = new EventStream(function(next) {
-            for(var i = 0; i < this.listeners.length; i++) {
-                this.listeners[i].onNext(f(next));
-            }
-        }, this);
-        this.listeners.push(s);
-        return s;
+        return this._newStream(function(next) {
+			var newVal = f(next);
+			this._notifyListeners(newVal);
+        });
     }
 };

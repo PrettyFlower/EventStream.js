@@ -24,8 +24,8 @@ Array.prototype.contains = function(o, f) {
 $(document).ready(function() {
     EventStream.init();
     
-    var mouseMoves = $(document).getEventStream('click');
-    mouseMoves
+    var mouseClicks = $(document).getEventStream('click');
+    mouseClicks
     .transform(function(event) {
         return {
             x: event.offsetX, 
@@ -48,6 +48,26 @@ $(document).ready(function() {
 		}
 	);
 });
+
+var a = [1, 2, 3, 4, 5];
+var s = EventStream.fromArray(a);
+var b = [];
+s.do(function(next) {
+	b.push(next);
+	if(b.length == a.length) {
+		var success = true;
+		for(var i = 0; i < Math.max(a.length, b.length); i++) {
+			if(a[i] !== b[i]) {
+				console.log('Failed: EventStream.fromArray');
+				success = false;
+			}
+		}
+		if(success) {
+			console.log('Passed: EventStream.fromArray');
+		}
+	}
+});
+s.start();
 
 /*var mainLoop = EventStream.fromInterval(1000 / 60);
 mainLoop.filter(function(next) {

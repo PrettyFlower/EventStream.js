@@ -9,7 +9,7 @@ function EventStream(onNext, parent) {
 
 EventStream.init = function() {
     (function($) {
-        $.fn.toEventStream = function(eventType) {
+        $.fn.getEventStream = function(eventType) {
             var s = new EventStream(function(event) {
                 for(var i = 0; i < this.listeners.length; i++) {
                     this.listeners[i].onNext(event);
@@ -21,7 +21,7 @@ EventStream.init = function() {
     })(jQuery);
 };
 
-EventStream.makeLoop = function(ms) {
+EventStream.fromInterval = function(ms) {
     var i = 0;
     var s = new EventStream(function () {
         for(var j = 0; j < this.listeners.length; j++) {
@@ -36,7 +36,7 @@ EventStream.makeLoop = function(ms) {
     return s;
 };
 
-EventStream.requestAnimFrame = function() {
+EventStream.fromAnimationFrame = function() {
     var s = new EventStream(function(timestamp) {
         if(!this.stopAnimation) {
             requestAnimFrame(this.onNext);
@@ -73,11 +73,8 @@ EventStream.prototype = {
         return splitStream;
     },
     
-    distinct: function(comparisonFn, resetFn) {
+    distinct: function(comparisonFn) {
         var s = new EventStream(function(next) {
-            if(resetFn && resetFn(next, s.lastValues)) {
-                this.lastValues.length = 0;
-            }
             if(!this.lastValues.contains(next, comparisonFn)) {
                 this.lastValues.push(next);
                 for(var i = 0; i < this.listeners.length; i++) {

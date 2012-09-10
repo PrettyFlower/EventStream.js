@@ -24,7 +24,7 @@ Array.prototype.contains = function(o, f) {
 $(document).ready(function() {
     EventStream.init();
     
-    var mouseMoves = $(document).toEventStream('click');
+    var mouseMoves = $(document).getEventStream('click');
     mouseMoves
     .transform(function(event) {
         return {
@@ -36,21 +36,20 @@ $(document).ready(function() {
             }
         };
     })
-    .distinct(
-        function(a, b) {
-            return a.x === b.x && a.y === b.y;
-        },
-        function(next, lastValues) {
-            if(lastValues.length == 0) return false;
-            return next.timestamp > lastValues[lastValues.length - 1].timestamp + 1000;
-        }
-    )
-    .do(function(p) {
-        console.log('' + p);
-    }); 
+	.groupBy(
+		function(next) {
+			return next.y * 1000 + next.x;
+		},
+		function(newStream) {
+			newStream.throttle(1000)
+			.do(function(p) {
+				console.log(p.val.toString());
+			});
+		}
+	);
 });
 
-var mainLoop = EventStream.makeLoop(1000 / 60);
+/*var mainLoop = EventStream.fromInterval(1000 / 60);
 mainLoop.filter(function(next) {
     return next % 60 === 0;
 })
@@ -85,10 +84,10 @@ mainLoop.take(5).do(function(next) {
 
 
 var start = new Date() * 1;
-var renderLoop = EventStream.requestAnimFrame();
+var renderLoop = EventStream.fromAnimationFrame();
 renderLoop.do(function(timestamp) {
         if(timestamp > start + 3000) {
             renderLoop.stop();
         }
         console.log(timestamp);
-    });
+    });*/

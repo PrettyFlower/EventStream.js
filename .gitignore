@@ -1,0 +1,24 @@
+syntax: glob
+*.suo
+*.user
+*~
+*.wav
+*.Wav
+*.WAV
+*.orig
+*.mp3
+*.Mp3
+*.MP3
+*.ogg
+*.settings
+*.db
+*.pyc
+serverLog.txt
+*.pidb
+*.userprefs
+
+syntax: regexp
+Bin
+bin
+obj
+build

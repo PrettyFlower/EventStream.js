@@ -1,17 +1,20 @@
-function EventStream(onNext, parent) {
+function EventStream(onNext, parents) {
     var self = this;
-    this.listeners = [];
+    this.listeners = {};
     this.onNext = function() {
         onNext.apply(self, arguments);
     }
-    this.parent = parent;
+    this.parents = parents;
+    this.id = EventStream.nextId++;
 }
+
+EventStream.nextId = 0;
 
 EventStream.init = function() {
     (function($) {
         $.fn.getEventStream = function(eventType) {
             var s = new EventStream(function(event) {
-				this._notifyListeners(event);
+                this._notifyListeners(event);
             });
             this.bind(eventType, s.onNext);
             return s;
@@ -24,7 +27,7 @@ EventStream.fromAnimationFrame = function() {
         if(!this.stopAnimation) {
             requestAnimFrame(this.onNext);
         }
-		this._notifyListeners(timestamp);
+        this._notifyListeners(timestamp);
     });
     s.stop = function() {
         this.stopAnimation = true;
@@ -34,21 +37,21 @@ EventStream.fromAnimationFrame = function() {
 };
 
 EventStream.fromArray = function(arr) {
-	var s = new EventStream(function(next) {
-		this._notifyListeners(next);
-	});
-	s.start = function() {
-		for(var i = 0; i < arr.length; i++) {
-			s.onNext(arr[i]);
-		}
-	}
-	return s;
+    var s = new EventStream(function(next) {
+        this._notifyListeners(next);
+    });
+    s.start = function() {
+        for(var i = 0; i < arr.length; i++) {
+            s.onNext(arr[i]);
+        }
+    }
+    return s;
 };
 
 EventStream.fromInterval = function(ms) {
     var i = 0;
     var s = new EventStream(function () {
-		this._notifyListeners(i);
+        this._notifyListeners(i);
         i++;
     });
     var interval = setInterval(s.onNext, ms);
@@ -59,49 +62,51 @@ EventStream.fromInterval = function(ms) {
 };
 
 EventStream.prototype = {
-	_newStream: function(onNext) {
-		var s = new EventStream(onNext, this);
-		this.listeners.push(s);
-		return s;
-	},
+    _newStream: function(onNext) {
+        var parents = {};
+        parents[this.id] = this;
+        var s = new EventStream(onNext, parents);
+        this.listeners[s.id] = s;
+        return s;
+    },
 
-	_notifyListeners: function(next) {
-		for(var i = 0; i < this.listeners.length; i++) {
-			this.listeners[i].onNext(next);
-		}
-	},
+    _notifyListeners: function(next) {
+        for(var l in this.listeners) {
+            this.listeners[l].onNext(next);
+        }
+    },
 
     addStreamOn: function(f, newStream) {
-		return this._newStream(function(next) {
+        return this._newStream(function(next) {
             if(f(next)) {
                 var s = new EventStream(function(next) {
-					this._notifyListeners(next);
-                }, splitStream);
+                    this._notifyListeners(next);
+                });
                 newStream(s);
-                splitStream.listeners.push(s);
-                s.onNext(next);
+                this.listeners[s.id] = s;
             }
-			this._notifyListeners(next);
+            this._notifyListeners(next);
         });
     },
-	
-	buffer: function(count) {
-		var buffer = [];
-		return this._newStream(function(next) {
-			buffer.push(next);
-			if(buffer.length >= count) {
-				this._notifyListeners(next);
-			}
-		});
-	},
+    
+    buffer: function(count) {
+        var buffer = [];
+        return this._newStream(function(next) {
+            buffer.push(next);
+            if(buffer.length >= count) {
+                this._notifyListeners(buffer);
+                buffer.length = 0;
+            }
+        });
+    },
     
     distinct: function(comparisonFn) {
         var s = this._newStream(function(next) {
             if(!this.lastValues.contains(next, comparisonFn)) {
                 this.lastValues.push(next);
-				this._notifyListeners(next);
+                this._notifyListeners(next);
             }
-        }, this);
+        });
         s.lastValues = [];
         return s;
     },
@@ -115,9 +120,9 @@ EventStream.prototype = {
     filter: function(f) {
         return this._newStream(function(next) {
             if(f(next)) {
-				this._notifyListeners(next);
+                this._notifyListeners(next);
             }
-        }, this);
+        });
     },
     
     groupBy: function(splitBy, newStream) {
@@ -128,11 +133,11 @@ EventStream.prototype = {
             var s = ss[key];
             if(!s) {
                 s = this._newStream(function(next) {
-					this._notifyListeners(next);
+                    this._notifyListeners(next);
                 });
                 ss[key] = s;
                 newStream(s);
-                this.listeners.push(s);
+                this.listeners[s.id] = s;
             }
             s.onNext({
                 key: key,
@@ -141,13 +146,31 @@ EventStream.prototype = {
         });
     },
     
+    /*mergeAll: function() {
+        var s = this._newStream(function(next) {
+            this._notifyListeners(next);
+        });
+        for(var i = 0; i < arguments.length; i++) {
+            var parentStream = arguments[i];
+            parentStream.listeners[s.id] = s;
+        }
+        return s;
+    },*/
+    
+    mergeAny: function() {
+        var s = this._newStream(function(next) {
+            this._notifyListeners(next);
+        });
+        for(var i = 0; i < arguments.length; i++) {
+            var parentStream = arguments[i];
+            parentStream.listeners[s.id] = s;
+        }
+        return s;
+    },
+    
     stop: function() {
-        for(var i = 0; i < this.parent.listeners.length; i++) {
-            var l = this.parent.listeners[i];
-            if(l === this) {
-                this.parent.listeners.splice(i, 1);
-                break;
-            }
+        for(var p in this.parents) {
+            delete this.parents[p].listeners[this.id];
         }
     },
     
@@ -157,14 +180,14 @@ EventStream.prototype = {
             if(stopFn(next)) {
                 self.stop();
             }
-			this._notifyListeners(next);
+            this._notifyListeners(next);
         });
     },
     
     take: function(n) {
         var count = 0;
         return this._newStream(function(next) {
-			this._notifyListeners(next);
+            this._notifyListeners(next);
             if(count >= n - 1) {
                 this.stop();
             }
@@ -177,15 +200,40 @@ EventStream.prototype = {
             var now = new Date() * 1;
             if(!this.lastDate || now > this.lastDate + timespanInMs) {
                 this.lastDate = now;
-				this._notifyListeners(next);
+                this._notifyListeners(next);
             }
         });
     },
     
     transform: function(f) {
         return this._newStream(function(next) {
-			var newVal = f(next);
-			this._notifyListeners(newVal);
+            var newVal = f(next);
+            this._notifyListeners(newVal);
         });
+    },
+    
+    waitForPause: function(delayInMs, loopSpeedInMs) {       
+        var s = this._newStream(function(next) {
+            this.count = 0;
+            this.lastNext = next;
+            if(!this.interval) {
+                this.interval = setInterval(this.intervalFn, this.loopSpeedInMs);
+            }
+        });
+        s.delayInMs = delayInMs || 500;
+        s.loopSpeedInMs = loopSpeedInMs || 100;
+        s.count = 0;
+        s.interval = null;
+        s.lastNext = null;
+        s.intervalFn = function() {
+            s.count += s.loopSpeedInMs;
+            if(s.count >= s.delayInMs) {
+                clearInterval(s.interval);
+                s.count = 0;
+                s.interval = null;
+                s._notifyListeners(s.lastNext);
+            }
+        };
+        return s;
     }
 };

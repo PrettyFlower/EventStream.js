@@ -76,13 +76,13 @@ EventStream.prototype = {
         }
     },
 
-    addStreamOn: function(f, newStream) {
+    addStreamOn: function(isNewStreamFn, newStreamFn) {
         return this._newStream(function(next) {
-            if(f(next)) {
+            if(isNewStreamFn.call(this, next)) {
                 var s = new EventStream(function(next) {
                     this._notifyListeners(next);
                 });
-                newStream(s);
+                newStreamFn.call(this, s);
                 this.listeners[s.id] = s;
             }
             this._notifyListeners(next);
@@ -113,30 +113,30 @@ EventStream.prototype = {
     
     do: function(f) {
         this._newStream(function(next) {
-            f(next);
+            f.call(this, next);
         });
     },
     
     filter: function(f) {
         return this._newStream(function(next) {
-            if(f(next)) {
+            if(f.call(this, next)) {
                 this._notifyListeners(next);
             }
         });
     },
     
-    groupBy: function(splitBy, newStream) {
+    groupBy: function(splitByFn, newStreamFn) {
         var self = this;
         var ss = {};
         return this._newStream(function(next) {
-            var key = splitBy(next);
+            var key = splitByFn.call(this, next);
             var s = ss[key];
             if(!s) {
                 s = this._newStream(function(next) {
                     this._notifyListeners(next);
                 });
                 ss[key] = s;
-                newStream(s);
+                newStreamFn.call(this, s);
                 this.listeners[s.id] = s;
             }
             s.onNext({
@@ -146,16 +146,16 @@ EventStream.prototype = {
         });
     },
     
-    /*mergeAll: function() {
+    mergeAll: function(mergeFn) {
         var s = this._newStream(function(next) {
             this._notifyListeners(next);
         });
-        for(var i = 0; i < arguments.length; i++) {
+        for(var i = 1; i < arguments.length; i++) {
             var parentStream = arguments[i];
             parentStream.listeners[s.id] = s;
         }
         return s;
-    },*/
+    },
     
     mergeAny: function() {
         var s = this._newStream(function(next) {
@@ -177,7 +177,7 @@ EventStream.prototype = {
     stopOn: function(stopFn) {
         var self = this;
         return this._newStream(function(next) {
-            if(stopFn(next)) {
+            if(stopFn.call(this, next)) {
                 self.stop();
             }
             this._notifyListeners(next);
@@ -207,7 +207,7 @@ EventStream.prototype = {
     
     transform: function(f) {
         return this._newStream(function(next) {
-            var newVal = f(next);
+            var newVal = f.call(this, next);
             this._notifyListeners(newVal);
         });
     },

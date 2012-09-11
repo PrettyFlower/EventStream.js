@@ -146,9 +146,17 @@ var s1 = EventStream.fromArray(a);
 var s2 = EventStream.fromArray(a);
 var s3 = EventStream.fromArray(a);
 s1.mergeAny(s2, s3)
-.distinct()
 .do(function(next) {
-    b.push(next);
+    var val = 0;
+    if(next.from === s1.id && (next.next == 1 || next.next == 2)) {
+        b.push(next.next);
+    }
+    else if(next.from === s2.id && next.next == 3) {
+        b.push(next.next);
+    }
+    else if(next.from === s3.id && (next.next == 4 || next.next == 5)) {
+        b.push(next.next);
+    }
 });
 s1.start();
 s2.start();
@@ -157,9 +165,120 @@ checkArrays(a, b, [
     'EventStream.mergeAny'
 ]);
 
+a = [1, 2, 3, 4, 5];
+var answer;
+var s1 = EventStream.fromArray(a);
+var s2 = EventStream.fromArray(a);
+var s3 = EventStream.fromArray(a);
+s1.mergeAll(s2, s3)
+.do(function(next) {
+    answer = next;
+});
+s1.start();
+s2.start();
+s3.start();
+var count = 0;
+for(var p in answer) {
+    count++;
+}
+if(answer[s1.id].next != 5 || answer[s2.id].next != 5 || answer[s3.id].next != 1 || count != 3) {
+    console.log('Failed: EventStream.mergeAll');
+    console.log(answer);
+}
+else {
+    console.log('Passed: EventStream.mergeAll');
+}
+
+a = [1, 2, 3, 4, 5, 6];
+b = [];
+s = EventStream.fromArray(a);
+s.stopOn(function(next) {
+    return next == 5;
+})
+.do(pushFn);
+s.start();
+a.splice(5, 1);
+checkArrays(a, b, [
+    'EventStream.stop',
+    'EventStream.stopOn'
+]);
+
+a = [1, 2, 3, 4, 5, 6];
+b = [];
+s = EventStream.fromArray(a);
+s.take(5)
+.do(pushFn);
+s.start();
+a.splice(5, 1);
+checkArrays(a, b, [
+    'EventStream.take'
+]);
+
+a = [1, 2, 3, 4, 5];
+b = [];
+s = EventStream.fromArray(a);
+s.transform(function(next) {
+    return next + 1;
+})
+.do(pushFn);
+s.start();
+for(var i = 0; i < a.length; i++) {
+    a[i]++;
+}
+checkArrays(a, b, [
+    'EventStream.transform'
+]);
+
+answer = -1;
+s = EventStream.fromInterval(10);
+s.throttle(1000)
+.do(function(next) {
+    answer = next;
+});
+s.stopOn(function(next) {
+    return next == 10;
+});
+s.filter(function(next) {
+    return next == 10;
+})
+.do(function(next) {
+    if(answer != 0) {
+        console.log('Failed: EventStream.fromInterval');
+        console.log('Failed: EventStream.throttle');
+        console.log(answer + ' != 0');
+    }
+    else {
+        console.log('Passed: EventStream.fromInterval');
+        console.log('Passed: EventStream.throttle');
+    }
+});
+
+answer = -1;
+s = EventStream.fromAnimationFrame();
+var count = 0;
+s.transform(function(next) {
+    count++;
+    if(count == 10) {
+        s.stop();
+    }
+    return count;
+})
+.waitForPause(1000)
+.do(function(next) {
+    answer = next;
+    if(answer != 10) {
+        console.log('Failed: EventStream.fromAnimationFrame');
+        console.log('Failed: EventStream.waitForPause');
+        console.log(answer + ' != 10');
+    }
+    else {
+        console.log('Passed: EventStream.fromAnimationFrame');
+        console.log('Passed: EventStream.waitForPause');
+    }
+});
 
 
-/*$(document).ready(function() {
+$(document).ready(function() {
     EventStream.init();
     
     var mouseClicks = $(document).getEventStream('click');
@@ -194,49 +313,4 @@ checkArrays(a, b, [
             $('#output').append('<div>' + text + '</div>');
         }
     });
-});*/
-
-
-
-/*var mainLoop = EventStream.fromInterval(1000 / 60);
-mainLoop.filter(function(next) {
-    return next % 60 === 0;
-})
-.transform(function(next) {
-    return next / 60;
-})
-.do(function(next) {
-    if(next >= 5) {
-        mainLoop.stop();
-    }
-    console.log(next);
 });
-
-mainLoop
-.filter(function(next) {
-    return next % 60 === 0;
-})
-.transform(function(next) {
-    return next / 60;
-})
-.groupBy(function(next) {
-    return next % 2;
-}, function(newStream) {
-    newStream.do(function(next) {
-        console.log(next.key + ', ' + next.val);
-    });
-});
-
-mainLoop.take(5).do(function(next) {
-console.log(next); 
-});
-
-
-var start = new Date() * 1;
-var renderLoop = EventStream.fromAnimationFrame();
-renderLoop.do(function(timestamp) {
-        if(timestamp > start + 3000) {
-            renderLoop.stop();
-        }
-        console.log(timestamp);
-    });*/

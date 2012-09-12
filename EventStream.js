@@ -55,10 +55,8 @@ EventStream.fromArray = function(arr) {
 };
 
 EventStream.fromInterval = function(ms) {
-    var i = 0;
     var s = new EventStream(function () {
-        this._notifyListeners(i);
-        i++;
+        this._notifyListeners();
     });
     var interval = setInterval(s.onNext, ms);
     s.stop = function() {
@@ -88,6 +86,18 @@ EventStream.prototype = {
         for(var l in this.listeners) {
             this.listeners[l].onNext(next, this);
         }
+    },
+    
+    addCounter: function() {
+        var count = 0;
+        var s = this._newStream(function(next) {
+            this._notifyListeners({
+                next: next,
+                count: count
+            });
+            count++;
+        });
+        return s;
     },
 
     addStreamOn: function(f, newStream) {
@@ -197,11 +207,50 @@ EventStream.prototype = {
     },
     
     mergeBufferArray: function() {
-        
+        var buffers = {};
+        var count = 0;
+        var s = this._newStream(function(next, from) {
+            if(!buffers[from.id]) {
+                buffers[from.id] = [];
+                count++;
+            }
+            buffers[from.id].push(next);
+            if(count === arguments.length + 1) {
+                this._notifyListeners(buffers);
+                buffers = {};
+                count = 0;
+            }
+            
+        });
+        for(var i = 0; i < arguments.length; i++) {
+            var parentStream = arguments[i];
+            parentStream.listeners[s.id] = s;
+        }
+        return s;
     },
     
-    mergeBufferObject: function() {
-        
+    mergeBufferObject: function(keySelector) {
+        var buffers = {};
+        var count = 0;
+        var s = this._newStream(function(next, from) {
+            if(!buffers[from.id]) {
+                buffers[from.id] = {};
+                count++;
+            }
+            var key = keySelector(next);
+            buffers[from.id][key] = next;
+            if(count === arguments.length + 1) {
+                this._notifyListeners(buffers);
+                buffers = {};
+                count = 0;
+            }
+            
+        });
+        for(var i = 1; i < arguments.length; i++) {
+            var parentStream = arguments[i];
+            parentStream.listeners[s.id] = s;
+        }
+        return s;
     },
     
     stop: function() {

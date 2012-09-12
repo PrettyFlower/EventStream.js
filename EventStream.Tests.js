@@ -117,22 +117,28 @@ else {
 
 a = [1, 1, 2, 2, 3, 3];
 b = [];
+var g = {
+    '1': [],
+    '2': [],
+    '3': []
+};
 s = EventStream.fromArray(a);
 b.length = 0;
 s.groupBy(
     function(next) {
         return next;
     },
-    function(newStream) {
-        newStream.transform(function(next) {
-            return next.val;
-        })
-        .distinct()
-        .do(pushFn);
+    function(newStream, key) {
+        b.push(key);
+        newStream.do(function(next) {
+            g[key].push(next);
+        });
     }
 )
 s.start();
-if(b[0] != 1 || b[1] != 2 || b[2] != 3 || b.length != 3) {
+if(b[0] != 1 || b[1] != 2 || b[2] != 3 || b.length != 3 || 
+    !checkArrays([1, 1], g[1], []) || !checkArrays([2, 2], g[2], []) ||
+    !checkArrays([3, 3], g[3], [])) {
     console.log('Failed: EventStream.groupBy');
     printArray(b);
 }
@@ -277,6 +283,29 @@ s.transform(function(next) {
     }
 });
 
+var ws = new WebSocket('ws://echo.websocket.org');
+ws.onopen = function(){
+    ws.send('hi');
+}
+ws.onclose = function(event){
+    console.log('Failed: EventStream.fromWebSocket');
+    console.log(event);
+}
+ws.onerror = function(event){
+    console.log('Failed: EventStream.fromWebSocket');
+    console.log(event);
+}
+wss = EventStream.fromWebSocket(ws);
+wss.do(function(event) {
+    if(event.data == 'hi') {
+        console.log('Passed: EventStream.fromWebSocket');
+    }
+    else {
+        console.log('Failed: EventStream.fromWebSocket');
+        console.log(event.data + ' != hi');
+    }
+});
+
 
 $(document).ready(function() {
     EventStream.init();
@@ -300,7 +329,7 @@ $(document).ready(function() {
         function(newStream) {
             newStream.throttle(1000)
             .do(function(p) {
-                console.log(p.val.toString());
+                console.log(p.toString());
             });
         }
     );

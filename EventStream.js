@@ -67,6 +67,14 @@ EventStream.fromInterval = function(ms) {
     return s;
 };
 
+EventStream.fromWebSocket = function(ws) {
+    var s = new EventStream(function (event) {
+        this._notifyListeners(event);
+    });
+    ws.onmessage = s.onNext;
+    return s;
+};
+
 EventStream.prototype = {
     _newStream: function(onNext) {
         var parents = {};
@@ -142,12 +150,9 @@ EventStream.prototype = {
                     this._notifyListeners(next);
                 });
                 ss[key] = s;
-                newStreamFn(s);
+                newStreamFn(s, key);
             }
-            s.onNext({
-                key: key,
-                val: next
-            });
+            s.onNext(next);
         });
     },
     
@@ -189,6 +194,14 @@ EventStream.prototype = {
             parentStream.listeners[s.id] = s;
         }
         return s;
+    },
+    
+    mergeBufferArray: function() {
+        
+    },
+    
+    mergeBufferObject: function() {
+        
     },
     
     stop: function() {

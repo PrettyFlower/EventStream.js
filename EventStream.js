@@ -22,11 +22,11 @@ EventStream.init = function() {
     })(jQuery);
 };
 
-EventStream.fromAnimationFrame = function() {
+EventStream.fromAnimationFrame = function(args) {
     var s = new EventStream(function(timestamp) {
         if(!this.stopAnimation) {
             requestAnimFrame(this.onNext);
-            this._notifyListeners(timestamp);
+            this._notifyListeners(args);
         }
     });
     s.stop = function() {
@@ -54,10 +54,11 @@ EventStream.fromArray = function(arr) {
     return s;
 };
 
-EventStream.fromInterval = function(ms) {
+EventStream.fromInterval = function(ms, currentState) {
     var s = new EventStream(function () {
-        this._notifyListeners();
+        this._notifyListeners(this.currentState);
     });
+    s.currentState = currentState;
     var interval = setInterval(s.onNext, ms);
     s.stop = function() {
         clearInterval(interval);
@@ -228,7 +229,7 @@ EventStream.prototype = {
         return s;
     },
     
-    mergeReturnLastObj: function(bDelayReturn) {
+    mergeReturnObjDelayed: function() {
         var obj = {};
         var count = 0;
         var s = this._newStream(function(next, from) {
@@ -240,21 +241,33 @@ EventStream.prototype = {
                 next: next
             };
             if(count === arguments.length + 1) {
-                if(bDelayReturn) this._notifyListeners(obj);
+                this._notifyListeners(obj);
                 obj = {};
                 count = 0;
             }
-            if(!bDelayReturn) {
-                this._notifyListeners(obj);
-                newObj = {};
-                for(var p in obj) {
-                    newObj[p] = obj;
-                }
-                obj = newObj;
-            }
             
         });
-        for(var i = 1; i < arguments.length; i++) {
+        for(var i = 0; i < arguments.length; i++) {
+            var parentStream = arguments[i];
+            parentStream.listeners[s.id] = s;
+        }
+        return s;
+    },
+    
+    mergeReturnObjImmediate: function() {
+        var obj = {};
+        var s = this._newStream(function(next, from) {
+            obj[from.id] = {
+                from: from.id,
+                next: next
+            };
+            var retObj = {};
+            for(var p in obj) {
+                retObj[p] = obj[p];
+            }
+            this._notifyListeners(retObj);
+        });
+        for(var i = 0; i < arguments.length; i++) {
             var parentStream = arguments[i];
             parentStream.listeners[s.id] = s;
         }

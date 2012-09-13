@@ -189,7 +189,7 @@ var answer;
 var s1 = EventStream.fromArray(a);
 var s2 = EventStream.fromArray(a);
 var s3 = EventStream.fromArray(a);
-s1.mergeReturnLastObj(true, s2, s3)
+s1.mergeReturnObjDelayed(s2, s3)
 .do(function(next) {
     answer = next;
 });
@@ -201,11 +201,11 @@ for(var p in answer) {
     count++;
 }
 if(answer[s1.id].next != 5 || answer[s2.id].next != 5 || answer[s3.id].next != 1 || count != 3) {
-    console.log('Failed: EventStream.mergeReturnLastObj: bdelayReturn = true');
+    console.log('Failed: EventStream.mergeReturnObjDelayed');
     console.log(answer);
 }
 else {
-    console.log('Passed: EventStream.mergeReturnLastObj: bdelayReturn = true');
+    console.log('Passed: EventStream.mergeReturnObjDelayed');
 }
 
 a = [1, 2, 3, 4, 5];
@@ -213,7 +213,7 @@ answer = {};
 s1 = EventStream.fromArray(a);
 s2 = EventStream.fromArray(a);
 s3 = EventStream.fromArray(a);
-s1.mergeReturnLastObj(false, s2, s3)
+s1.mergeReturnObjImmediate(s2, s3)
 .take(1)
 .do(function(next) {
     answer = next;
@@ -226,11 +226,11 @@ for(var p in answer) {
     count++;
 }
 if(answer[s1.id].next != 1 || answer[s2.id] != undefined || answer[s3.id] != undefined || count != 1) {
-    console.log('Failed: EventStream.mergeReturnLastObj: bdelayReturn = false');
+    console.log('Failed: EventStream.mergeReturnObjImmediate');
     console.log(answer);
 }
 else {
-    console.log('Passed: EventStream.mergeReturnLastObj: bdelayReturn = false');
+    console.log('Passed: EventStream.mergeReturnObjImmediate');
 }
 
 a = [1, 2, 3, 4, 5];

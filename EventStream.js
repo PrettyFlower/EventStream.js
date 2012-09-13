@@ -166,47 +166,7 @@ EventStream.prototype = {
         });
     },
     
-    mergeAll: function() {
-        var obj = {};
-        var count = 0;
-        var s = this._newStream(function(next, from) {
-            if(!obj[from.id]) {
-                count++;
-            }
-            obj[from.id] = {
-                from: from.id,
-                next: next
-            };
-            if(count === arguments.length + 1) {
-                this._notifyListeners(obj);
-                obj = {};
-                count = 0;
-            }
-            
-        });
-        for(var i = 0; i < arguments.length; i++) {
-            var parentStream = arguments[i];
-            parentStream.listeners[s.id] = s;
-        }
-        return s;
-    },
-    
-    mergeAny: function() {
-        var s = this._newStream(function(next, from) {
-            next = {
-                from: from.id,
-                next: next
-            };
-            this._notifyListeners(next);
-        });
-        for(var i = 0; i < arguments.length; i++) {
-            var parentStream = arguments[i];
-            parentStream.listeners[s.id] = s;
-        }
-        return s;
-    },
-    
-    mergeBufferArray: function() {
+    mergeReturnBufferArray: function() {
         var buffers = {};
         var count = 0;
         var s = this._newStream(function(next, from) {
@@ -229,7 +189,7 @@ EventStream.prototype = {
         return s;
     },
     
-    mergeBufferObject: function(keySelector) {
+    mergeReturnBufferObject: function(keySelector) {
         var buffers = {};
         var count = 0;
         var s = this._newStream(function(next, from) {
@@ -243,6 +203,54 @@ EventStream.prototype = {
                 this._notifyListeners(buffers);
                 buffers = {};
                 count = 0;
+            }
+            
+        });
+        for(var i = 1; i < arguments.length; i++) {
+            var parentStream = arguments[i];
+            parentStream.listeners[s.id] = s;
+        }
+        return s;
+    },
+    
+    mergeReturnImmediately: function() {
+        var s = this._newStream(function(next, from) {
+            next = {
+                from: from.id,
+                next: next
+            };
+            this._notifyListeners(next);
+        });
+        for(var i = 0; i < arguments.length; i++) {
+            var parentStream = arguments[i];
+            parentStream.listeners[s.id] = s;
+        }
+        return s;
+    },
+    
+    mergeReturnLastObj: function(bDelayReturn) {
+        var obj = {};
+        var count = 0;
+        var s = this._newStream(function(next, from) {
+            if(!obj[from.id]) {
+                count++;
+            }
+            obj[from.id] = {
+                from: from.id,
+                next: next
+            };
+            if(count === arguments.length + 1) {
+                if(bDelayReturn) this._notifyListeners(obj);
+                obj = {};
+                count = 0;
+            }
+            if(!bDelayReturn) {
+                this._notifyListeners(obj);
+                newObj = {};
+                for(var p in obj) {
+                    newObj[p] = obj;
+                }
+                obj = newObj;
             }
             
         });

@@ -4,7 +4,7 @@ function EventStream(onNext, parents) {
     this.onNext = function() {
         onNext.apply(self, arguments);
     }
-    this.parents = parents;
+    this.parents = parents || {};
     this.id = EventStream.nextId++;
 }
 
@@ -12,10 +12,12 @@ EventStream.nextId = 0;
 
 EventStream.init = function() {
     (function($) {
-        $.fn.getEventStream = function(eventType) {
+        $.fn.getEventStream = function(eventType, currentState) {
             var s = new EventStream(function(event) {
+                event.currentState = this.currentState;
                 this._notifyListeners(event);
             });
+            s.currentState = currentState;
             this.bind(eventType, s.onNext);
             return s;
         };
@@ -74,6 +76,125 @@ EventStream.fromWebSocket = function(ws) {
     return s;
 };
 
+/*
+ * args:
+ *      stream: stream to merge
+ *      buffer (optional): array or object depending on the
+ *          type of buffering you want
+ *      keySelector: required if buffer set to object;
+ *          selects the key to use when buffering to an object
+ * 
+ * return:
+ *      n1...nx: an array, object, or value depending on the 
+ *          buffer type selected
+ */
+EventStream.mergeBlocking = function() {
+    var obj = {};
+    var streamArgs = {};
+    for(var i = 0; i < arguments.length; i++) {
+        var arg = arguments[i];
+        streamArgs[arg.stream.id] = arg;
+    }
+    var s = new EventStream(function(next, from) {
+        var fromArgs = streamArgs[from.id];
+        fromArgs.pushed = true;
+        
+        if(fromArgs.buffer == 'array') {
+            obj[fromArgs.stream.id].push(next);
+        }
+        else if(fromArgs.buffer == 'object') {
+            var key = streamArgs[fromArgs.stream.id].keySelector(next);
+            obj[fromArgs.stream.id][key] = next;
+        }
+        else {
+            obj[fromArgs.stream.id] = next;
+        }
+        
+        var unblock = true;
+        for(var p in streamArgs) {
+            if(!streamArgs[p].pushed) {
+                unblock = false;
+                break;
+            }
+        }
+        
+        if(unblock) {
+            var retObj = {};
+            for(var p in obj) {
+                retObj[p] = obj[p];
+            }
+            this._notifyListeners(retObj);
+            for(var a in streamArgs) {
+                var arg = streamArgs[a];
+                if(arg.buffer == 'array') {
+                    obj[arg.stream.id] = [];
+                }
+                else if(arg.buffer == 'object') {
+                    obj[arg.stream.id] = {};
+                }
+                else {
+                    delete obj[arg.stream.id];
+                }
+            }
+        }
+        
+    });
+    
+    for(var a in streamArgs) {
+        var arg = streamArgs[a];
+        arg.stream.listeners[arg.stream.id] = s;
+        s.parents[arg.stream.id] = arg.stream;
+        if(arg.buffer == 'array') {
+            obj[arg.stream.id] = [];
+        }
+        else if(arg.buffer == 'object') {
+            obj[arg.stream.id] = {};
+        }
+    }
+    return s;
+};
+
+/*
+ * args:
+ *      stream: stream to merge
+ *      clear: whether or not to clear the last value
+ *          when a value is pushed from a different stream
+ * 
+ * return:
+ *      id n1...nx: the next value for the associated stream;
+ *          this may be the last reported value if clear is 
+ *          not set for this stream
+ *      from: the stream that fired the event
+ */
+EventStream.mergeNonBlocking = function() {
+    var obj = {};
+    var args = {};
+    for(var i = 0; i < arguments.length; i++) {
+        args[arguments[i].stream.id] = arguments[i];
+    }
+    var s = new EventStream(function(next, from) {
+        obj[from.id] = next;
+        var retObj = {
+            from: from.id
+        };
+        for(var p in obj) {
+            retObj[p] = obj[p];
+        }
+        this._notifyListeners(retObj);
+        for(var a in args) {
+            var arg = args[a];
+            if(arg.clear) delete obj[arg.stream.id];
+        }
+    });
+    
+    for(var a in args) {
+        var parentStream = args[a].stream;
+        parentStream.listeners[s.id] = s;
+        s.parents[parentStream.id] = parentStream;
+    }
+    return s;
+};
+
 EventStream.prototype = {
     _newStream: function(onNext) {
         var parents = {};
@@ -101,17 +222,40 @@ EventStream.prototype = {
         return s;
     },
 
-    addStreamOn: function(f, newStream) {
+    addStreamOn: function(f, newStreamFn) {
         return this._newStream(function(next) {
             if(f(next)) {
                 var s = new EventStream(function(next) {
                     this._notifyListeners(next);
                 });
-                newStream(s);
+                newStreamFn(s);
                 this.listeners[s.id] = s;
             }
             this._notifyListeners(next);
         });
+    },
+    
+    ajax: function(args) {
+        var sSuccess = new EventStream(function(next) {
+            this._notifyListeners(next);
+        });
+        args.successStreamFn(sSuccess);
+        args.success = sSuccess.onNext;
+        var s = this._newStream(function(next) {
+            $.ajax(this.args);
+            this._notifyListeners(next);
+        });
+        s.args = args;
+        return s;
+    },
+    
+    block: function(fn) {
+        var s = this._newStream(function(next) {
+            fn(next, function(next) {
+                s._notifyListeners.call(s, next);
+            });
+        });
+        return s;
     },
     
     buffer: function(count) {
@@ -165,113 +309,6 @@ EventStream.prototype = {
             }
             s.onNext(next);
         });
-    },
-    
-    mergeReturnBufferArray: function() {
-        var buffers = {};
-        var count = 0;
-        var s = this._newStream(function(next, from) {
-            if(!buffers[from.id]) {
-                buffers[from.id] = [];
-                count++;
-            }
-            buffers[from.id].push(next);
-            if(count === arguments.length + 1) {
-                this._notifyListeners(buffers);
-                buffers = {};
-                count = 0;
-            }
-            
-        });
-        for(var i = 0; i < arguments.length; i++) {
-            var parentStream = arguments[i];
-            parentStream.listeners[s.id] = s;
-        }
-        return s;
-    },
-    
-    mergeReturnBufferObject: function(keySelector) {
-        var buffers = {};
-        var count = 0;
-        var s = this._newStream(function(next, from) {
-            if(!buffers[from.id]) {
-                buffers[from.id] = {};
-                count++;
-            }
-            var key = keySelector(next);
-            buffers[from.id][key] = next;
-            if(count === arguments.length + 1) {
-                this._notifyListeners(buffers);
-                buffers = {};
-                count = 0;
-            }
-            
-        });
-        for(var i = 1; i < arguments.length; i++) {
-            var parentStream = arguments[i];
-            parentStream.listeners[s.id] = s;
-        }
-        return s;
-    },
-    
-    mergeReturnImmediately: function() {
-        var s = this._newStream(function(next, from) {
-            next = {
-                from: from.id,
-                next: next
-            };
-            this._notifyListeners(next);
-        });
-        for(var i = 0; i < arguments.length; i++) {
-            var parentStream = arguments[i];
-            parentStream.listeners[s.id] = s;
-        }
-        return s;
-    },
-    
-    mergeReturnObjDelayed: function() {
-        var obj = {};
-        var count = 0;
-        var s = this._newStream(function(next, from) {
-            if(!obj[from.id]) {
-                count++;
-            }
-            obj[from.id] = {
-                from: from.id,
-                next: next
-            };
-            if(count === arguments.length + 1) {
-                this._notifyListeners(obj);
-                obj = {};
-                count = 0;
-            }
-            
-        });
-        for(var i = 0; i < arguments.length; i++) {
-            var parentStream = arguments[i];
-            parentStream.listeners[s.id] = s;
-        }
-        return s;
-    },
-    
-    mergeReturnObjImmediate: function() {
-        var obj = {};
-        var s = this._newStream(function(next, from) {
-            obj[from.id] = {
-                from: from.id,
-                next: next
-            };
-            var retObj = {};
-            for(var p in obj) {
-                retObj[p] = obj[p];
-            }
-            this._notifyListeners(retObj);
-        });
-        for(var i = 0; i < arguments.length; i++) {
-            var parentStream = arguments[i];
-            parentStream.listeners[s.id] = s;
-        }
-        return s;
     },
     
     stop: function() {

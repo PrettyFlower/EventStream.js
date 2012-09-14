@@ -100,6 +100,46 @@ checkArrays(a, b, [
     'EventStream.addStreamOn'
 ]);
 
+var ajaxResult = '';
+var s = EventStream.fromArray([1]);
+s.ajax({
+    url: 'index.html',
+    successStreamFn: function(stream) {
+        stream.do(function(next) {
+            ajaxResult += next.slice(0, 9);
+            if(ajaxResult != 'hi<!DOCTYPE') {
+                console.log('Failed: EventStream.ajax');
+                console.log(ajaxResult);
+            }
+            else {
+                console.log('Passed: EventStream.ajax');
+            }
+        });
+    }
+})
+.do(function(next) {
+    ajaxResult += 'hi';
+});
+s.start();
+
+s = EventStream.fromArray([new Date() * 1]);
+s.block(function(next, callback) {
+    var interval = window.setInterval(function() {
+        window.clearInterval(interval);
+        callback(next);
+    }, 1000);
+})
+.do(function(next) {
+    if(!next || new Date() * 1 - next < 500) {
+        console.log('Failed: EventStream.block');
+        console.log((new Date() * 1) + ', ' + next);
+    }
+    else {
+        console.log('Passed: EventStream.block');
+    }
+});
+s.start();
+
 s = EventStream.fromArray(a);
 b.length = 0;
 s.buffer(2)
@@ -160,60 +200,26 @@ else {
 }
 
 a = [1, 2, 3, 4, 5];
-b.length = 0;
-s1 = EventStream.fromArray(a);
-s2 = EventStream.fromArray(a);
-s3 = EventStream.fromArray(a);
-s1.mergeReturnImmediately(s2, s3)
-.do(function(next) {
-    var val = 0;
-    if(next.from === s1.id && (next.next == 1 || next.next == 2)) {
-        b.push(next.next);
-    }
-    else if(next.from === s2.id && next.next == 3) {
-        b.push(next.next);
-    }
-    else if(next.from === s3.id && (next.next == 4 || next.next == 5)) {
-        b.push(next.next);
-    }
-});
-s1.start();
-s2.start();
-s3.start();
-checkArrays(a, b, [
-    'EventStream.mergeReturnImmediately'
-]);
-
-a = [1, 2, 3, 4, 5];
 var answer;
-var s1 = EventStream.fromArray(a);
-var s2 = EventStream.fromArray(a);
-var s3 = EventStream.fromArray(a);
-s1.mergeReturnObjDelayed(s2, s3)
-.do(function(next) {
-    answer = next;
-});
-s1.start();
-s2.start();
-s3.start();
-var count = 0;
-for(var p in answer) {
-    count++;
-}
-if(answer[s1.id].next != 5 || answer[s2.id].next != 5 || answer[s3.id].next != 1 || count != 3) {
-    console.log('Failed: EventStream.mergeReturnObjDelayed');
-    console.log(answer);
-}
-else {
-    console.log('Passed: EventStream.mergeReturnObjDelayed');
-}
-
-a = [1, 2, 3, 4, 5];
-answer = {};
 s1 = EventStream.fromArray(a);
 s2 = EventStream.fromArray(a);
 s3 = EventStream.fromArray(a);
-s1.mergeReturnObjImmediate(s2, s3)
+EventStream.mergeBlocking(
+    {
+        stream: s1,
+    },
+    {
+        stream: s2,
+        buffer: 'array'
+    },
+    {
+        stream: s3,
+        buffer: 'object',
+        keySelector: function(next) {
+            return next;
+        }
+    }
+)
 .take(1)
 .do(function(next) {
     answer = next;
@@ -221,65 +227,49 @@ s1.mergeReturnObjImmediate(s2, s3)
 s1.start();
 s2.start();
 s3.start();
-count = 0;
-for(var p in answer) {
-    count++;
-}
-if(answer[s1.id].next != 1 || answer[s2.id] != undefined || answer[s3.id] != undefined || count != 1) {
-    console.log('Failed: EventStream.mergeReturnObjImmediate');
+if(answer[s1.id] !== 5 || answer[s2.id].length !== 5 || answer[s3.id][1] !== 1) {
+    console.log('Failed: EventStream.mergeBlocking');
     console.log(answer);
 }
 else {
-    console.log('Passed: EventStream.mergeReturnObjImmediate');
+    console.log('Passed: EventStream.mergeBlocking');
 }
 
 a = [1, 2, 3, 4, 5];
-var b1 = [];
-var b2 = [];
-var b3 = [];
-var s1 = EventStream.fromArray(a);
-var s2 = EventStream.fromArray(a);
-var s3 = EventStream.fromArray(a);
-s1.mergeReturnBufferArray(s2, s3)
+b.length = 0;
+s1 = EventStream.fromArray(a);
+s2 = EventStream.fromArray(a);
+s3 = EventStream.fromArray(a);
+EventStream.mergeNonBlocking(
+    {
+        stream: s1,
+        clear: true
+    },
+    {
+        stream: s2
+    },
+    {
+        stream: s3,
+        clear: true
+    }
+)
 .do(function(next) {
-    b1 = next[s1.id];
-    b2 = next[s2.id];
-    b3 = next[s3.id];
+    if(next.from === s1.id && (next[s1.id] == 1 || next[s1.id] == 2)) {
+        b.push(next[s1.id]);
+    }
+    else if(next.from === s3.id && (next[s3.id] == 3 || next[s3.id] == 4)) {
+        b.push(next[s3.id]);
+        if(next[s3.id] == 4) {
+            b.push(next[s2.id]);
+        }
+    }
 });
 s1.start();
 s2.start();
 s3.start();
-if(checkArrays(a, b1, []) && checkArrays(a, b2, []) && b3.length == 1) {
-    console.log('Passed: EventStream.mergeReturnBufferArray');
-}
-else {
-    console.log('Failed: EventStream.mergeReturnBufferArray');
-}
-
-a = [1, 2, 3, 4, 5];
-var b1 = {};
-var b2 = {};
-var b3 = {};
-var s1 = EventStream.fromArray(a);
-var s2 = EventStream.fromArray(a);
-var s3 = EventStream.fromArray(a);
-s1.mergeReturnBufferObject(function(next) {
-    return next;
-}, s2, s3)
-.do(function(next) {
-    b1 = next[s1.id];
-    b2 = next[s2.id];
-    b3 = next[s3.id];
-});
-s1.start();
-s2.start();
-s3.start();
-if(b1[5] == 5 && b2[3] == 3 && b3[1] == 1) {
-    console.log('Passed: EventStream.mergeReturnBufferObject');
-}
-else {
-    console.log('Failed: EventStream.mergeReturnBufferObject');
-}
+checkArrays(a, b, [
+    'EventStream.mergeNonBlocking'
+]);
 
 a = [1, 2, 3, 4, 5, 6];
 b = [];

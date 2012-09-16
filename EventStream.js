@@ -31,12 +31,13 @@ EventStream.fromAnimationFrame = function(args) {
     var s = new EventStream(function(timestamp) {
         if(!this.stopAnimation) {
             requestAnimFrame(this.onNext);
-            this._notifyListeners(args);
+            this._notifyListeners(this.args);
         }
     });
     s.stop = function() {
         this.stopAnimation = true;
     }
+    s.args = args;
     s.onNext();
     return s;
 };

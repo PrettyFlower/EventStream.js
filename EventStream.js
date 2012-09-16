@@ -4,7 +4,10 @@ function EventStream(onNext, parents) {
     this.onNext = function() {
         onNext.apply(self, arguments);
     }
-    this.parents = parents || {};
+    this.parents = {};
+    for(var p in parents) {
+        this.listenTo(parents[p]);
+    }
     this.id = EventStream.nextId++;
 }
 
@@ -68,7 +71,7 @@ EventStream.fromInterval = function(ms, currentState) {
     return s;
 };
 
-EventStream.fromWebSocket = function(ws) {
+EventStream.fromOnMessager = function(ws) {
     var s = new EventStream(function (event) {
         this._notifyListeners(event);
     });
@@ -80,15 +83,23 @@ EventStream.fromWebSocket = function(ws) {
  * args:
  *      stream: stream to merge
  *      buffer (optional): array or object depending on the
- *          type of buffering you want
+ *          type of buffering you want. If not specified,the 
+ *          last pushed value is stored
  *      keySelector: required if buffer set to object;
  *          selects the key to use when buffering to an object
+ *      clearFn: a function that takes in the next element and
+ *          determines whether or not the cached/buffered 
+ *          values should be cleared
+ *      canPushFn: a function that takes in the next element
+ *          and returns a bool to determine whether or not 
+ *          the resulting stream can have this value pushed 
+ *          to it or if it should be buffered/cached
  * 
  * return:
  *      n1...nx: an array, object, or value depending on the 
  *          buffer type selected
  */
-EventStream.mergeBlocking = function() {
+EventStream.merge = function() {
     var obj = {};
     var streamArgs = {};
     for(var i = 0; i < arguments.length; i++) {
@@ -98,6 +109,8 @@ EventStream.mergeBlocking = function() {
     var s = new EventStream(function(next, from) {
         var fromArgs = streamArgs[from.id];
         fromArgs.pushed = true;
+        
+        obj.from = from.id;
         
         if(fromArgs.buffer == 'array') {
             obj[fromArgs.stream.id].push(next);
@@ -110,15 +123,7 @@ EventStream.mergeBlocking = function() {
             obj[fromArgs.stream.id] = next;
         }
         
-        var unblock = true;
-        for(var p in streamArgs) {
-            if(!streamArgs[p].pushed) {
-                unblock = false;
-                break;
-            }
-        }
-        
-        if(unblock) {
+        if(fromArgs.canPushFn(next)) {
             var retObj = {};
             for(var p in obj) {
                 retObj[p] = obj[p];
@@ -126,24 +131,24 @@ EventStream.mergeBlocking = function() {
             this._notifyListeners(retObj);
             for(var a in streamArgs) {
                 var arg = streamArgs[a];
-                if(arg.buffer == 'array') {
-                    obj[arg.stream.id] = [];
-                }
-                else if(arg.buffer == 'object') {
-                    obj[arg.stream.id] = {};
-                }
-                else {
-                    delete obj[arg.stream.id];
+                if(arg.clearFn(retObj)) {
+                    if(arg.buffer == 'array') {
+                        obj[arg.stream.id] = [];
+                    }
+                    else if(arg.buffer == 'object') {
+                        obj[arg.stream.id] = {};
+                    }
+                    else {
+                        delete obj[arg.stream.id];
+                    }
                 }
             }
         }
-        
     });
     
     for(var a in streamArgs) {
         var arg = streamArgs[a];
-        arg.stream.listeners[arg.stream.id] = s;
-        s.parents[arg.stream.id] = arg.stream;
+        s.listenTo(arg.stream);
         if(arg.buffer == 'array') {
             obj[arg.stream.id] = [];
         }
@@ -154,53 +159,10 @@ EventStream.mergeBlocking = function() {
     return s;
 };
 
-/*
- * args:
- *      stream: stream to merge
- *      clear: whether or not to clear the last value
- *          when a value is pushed from a different stream
- * 
- * return:
- *      id n1...nx: the next value for the associated stream;
- *          this may be the last reported value if clear is 
- *          not set for this stream
- *      from: the stream that fired the event
- */
-EventStream.mergeNonBlocking = function() {
-    var obj = {};
-    var args = {};
-    for(var i = 0; i < arguments.length; i++) {
-        args[arguments[i].stream.id] = arguments[i];
-    }
-    var s = new EventStream(function(next, from) {
-        obj[from.id] = next;
-        var retObj = {
-            from: from.id
-        };
-        for(var p in obj) {
-            retObj[p] = obj[p];
-        }
-        this._notifyListeners(retObj);
-        for(var a in args) {
-            var arg = args[a];
-            if(arg.clear) delete obj[arg.stream.id];
-        }
-    });
-    
-    for(var a in args) {
-        var parentStream = args[a].stream;
-        parentStream.listeners[s.id] = s;
-        s.parents[parentStream.id] = parentStream;
-    }
-    return s;
-};
-
 EventStream.prototype = {
     _newStream: function(onNext) {
-        var parents = {};
-        parents[this.id] = this;
-        var s = new EventStream(onNext, parents);
-        this.listeners[s.id] = s;
+        var s = new EventStream(onNext);
+        s.listenTo(this);
         return s;
     },
 
@@ -225,27 +187,33 @@ EventStream.prototype = {
     addStreamOn: function(f, newStreamFn) {
         return this._newStream(function(next) {
             if(f(next)) {
-                var s = new EventStream(function(next) {
+                var s = this._newStream(function(next) {
                     this._notifyListeners(next);
                 });
-                newStreamFn(s);
-                this.listeners[s.id] = s;
+                newStreamFn(next, s);
             }
             this._notifyListeners(next);
         });
     },
     
     ajax: function(args) {
-        var sSuccess = new EventStream(function(next) {
-            this._notifyListeners(next);
-        });
-        args.successStreamFn(sSuccess);
-        args.success = sSuccess.onNext;
         var s = this._newStream(function(next) {
-            $.ajax(this.args);
-            this._notifyListeners(next);
+            $.ajax(args);
         });
-        s.args = args;
+        args.success = function(result) {
+            s._notifyListeners.call(s, result);
+        }
+        return s;
+    },
+    
+    async: function(file) {
+        var worker = new Worker(file);
+        var s = this._newStream(function(next) {
+            worker.postMessage(next);
+        });
+        worker.onmessage = function(event) {
+            s._notifyListeners.call(s, event);
+        };
         return s;
     },
     
@@ -267,6 +235,16 @@ EventStream.prototype = {
                 buffer.length = 0;
             }
         });
+    },
+    
+    delay: function(ms) {
+        var s = new EventStream(function(next) {
+            setTimeout(function() {
+                s._notifyListeners(next);
+            }, ms);
+        });
+        s.listenTo(this);
+        return s;
     },
     
     distinct: function(comparisonFn) {
@@ -305,16 +283,26 @@ EventStream.prototype = {
                     this._notifyListeners(next);
                 });
                 ss[key] = s;
-                newStreamFn(s, key);
+                newStreamFn(next, s);
             }
             s.onNext(next);
         });
     },
     
+    listenTo: function(parent) {
+        this.parents[parent.id] = parent;
+        parent.listeners[this.id] = this;
+    },
+    
     stop: function() {
         for(var p in this.parents) {
-            delete this.parents[p].listeners[this.id];
+            this.stopListeningTo(this.parents[p]);
         }
+    },
+    
+    stopListeningTo: function(parent) {
+        delete this.parents[parent.id];
+        delete parent.listeners[this.id];
     },
     
     stopOn: function(stopFn) {

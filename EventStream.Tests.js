@@ -86,7 +86,7 @@ s.addStreamOn(
     function(next) {
         return next == 3;
     },
-    function(newStream) {
+    function(next, newStream) {
         newStream.do(pushFn);
     }
 )
@@ -103,24 +103,43 @@ checkArrays(a, b, [
 var ajaxResult = '';
 var s = EventStream.fromArray([1]);
 s.ajax({
-    url: 'index.html',
-    successStreamFn: function(stream) {
-        stream.do(function(next) {
-            ajaxResult += next.slice(0, 9);
-            if(ajaxResult != 'hi<!DOCTYPE') {
-                console.log('Failed: EventStream.ajax');
-                console.log(ajaxResult);
-            }
-            else {
-                console.log('Passed: EventStream.ajax');
-            }
-        });
-    }
+    url: 'index.html'
 })
 .do(function(next) {
+    ajaxResult += next.slice(0, 9);
+    if(ajaxResult != 'hi<!DOCTYPE') {
+        console.log('Failed: EventStream.ajax');
+        console.log(ajaxResult);
+    }
+    else {
+        console.log('Passed: EventStream.ajax');
+    }
+});
+
+s.do(function(next) {
     ajaxResult += 'hi';
 });
 s.start();
+
+var syncFinished;
+var s = EventStream.fromArray([1]);
+s.async('worker.js')
+.do(function(next) {
+    var diff = Math.abs(syncFinished - new Date() * 1);
+    if(diff > 100) {
+        console.log('Failed: EventStream.async');
+        console.log(diff);
+    }
+    else {
+        console.log('Passed: EventStream.async');
+    }
+});
+s.delay(1000)
+.do(function(next) {
+    syncFinished = new Date() * 1;
+});
+s.start();
+
 
 s = EventStream.fromArray([new Date() * 1]);
 s.block(function(next, callback) {
@@ -152,6 +171,18 @@ checkArrays(a, b, [
     'EventStream.buffer'
 ]);
 
+s = EventStream.fromArray([new Date() * 1]);
+s.delay(1000)
+.do(function(next) {
+    if(new Date() * 1 - next < 500) {
+        console.log('Failed: EventStream.delay');
+    }
+    else {
+        console.log('Passed: EventStream.delay');
+    }
+});
+s.start();
+
 var count = 0;
 a = [1, 2, 3, 3, 4];
 s = EventStream.fromArray(a);
@@ -181,10 +212,10 @@ s.groupBy(
     function(next) {
         return next;
     },
-    function(newStream, key) {
-        b.push(key);
+    function(next, newStream) {
+        b.push(next);
         newStream.do(function(next) {
-            g[key].push(next);
+            g[next].push(next);
         });
     }
 )
@@ -200,27 +231,31 @@ else {
 }
 
 a = [1, 2, 3, 4, 5];
-var answer;
 s1 = EventStream.fromArray(a);
 s2 = EventStream.fromArray(a);
 s3 = EventStream.fromArray(a);
-EventStream.mergeBlocking(
+EventStream.merge(
     {
         stream: s1,
+        clearFn: function(next) { return false; },
+        canPushFn: function(next) { return true; }
     },
     {
         stream: s2,
-        buffer: 'array'
+        buffer: 'array',
+        clearFn: function(next) { return false; },
+        canPushFn: function(next) { return false; }
     },
     {
         stream: s3,
         buffer: 'object',
         keySelector: function(next) {
             return next;
-        }
+        },
+        clearFn: function(next) { return true; },
+        canPushFn: function(next) { return next == 5; }
     }
 )
-.take(1)
 .do(function(next) {
     answer = next;
 });
@@ -228,48 +263,12 @@ s1.start();
 s2.start();
 s3.start();
 if(answer[s1.id] !== 5 || answer[s2.id].length !== 5 || answer[s3.id][1] !== 1) {
-    console.log('Failed: EventStream.mergeBlocking');
+    console.log('Failed: EventStream.merge');
     console.log(answer);
 }
 else {
-    console.log('Passed: EventStream.mergeBlocking');
+    console.log('Passed: EventStream.merge');
 }
-
-a = [1, 2, 3, 4, 5];
-b.length = 0;
-s1 = EventStream.fromArray(a);
-s2 = EventStream.fromArray(a);
-s3 = EventStream.fromArray(a);
-EventStream.mergeNonBlocking(
-    {
-        stream: s1,
-        clear: true
-    },
-    {
-        stream: s2
-    },
-    {
-        stream: s3,
-        clear: true
-    }
-)
-.do(function(next) {
-    if(next.from === s1.id && (next[s1.id] == 1 || next[s1.id] == 2)) {
-        b.push(next[s1.id]);
-    }
-    else if(next.from === s3.id && (next[s3.id] == 3 || next[s3.id] == 4)) {
-        b.push(next[s3.id]);
-        if(next[s3.id] == 4) {
-            b.push(next[s2.id]);
-        }
-    }
-});
-s1.start();
-s2.start();
-s3.start();
-checkArrays(a, b, [
-    'EventStream.mergeNonBlocking'
-]);
 
 a = [1, 2, 3, 4, 5, 6];
 b = [];
@@ -364,20 +363,20 @@ ws.onopen = function(){
     ws.send('hi');
 }
 ws.onclose = function(event){
-    console.log('Failed: EventStream.fromWebSocket');
+    console.log('Failed: EventStream.fromWebMessager');
     console.log(event);
 }
 ws.onerror = function(event){
-    console.log('Failed: EventStream.fromWebSocket');
+    console.log('Failed: EventStream.fromWebMessager');
     console.log(event);
 }
-wss = EventStream.fromWebSocket(ws);
+wss = EventStream.fromOnMessager(ws);
 wss.do(function(event) {
     if(event.data == 'hi') {
-        console.log('Passed: EventStream.fromWebSocket');
+        console.log('Passed: EventStream.fromWebMessager');
     }
     else {
-        console.log('Failed: EventStream.fromWebSocket');
+        console.log('Failed: EventStream.fromWebMessager');
         console.log(event.data + ' != hi');
     }
 });
@@ -402,7 +401,7 @@ $(document).ready(function() {
         function(next) {
             return next.y * 1000 + next.x;
         },
-        function(newStream) {
+        function(next, newStream) {
             newStream.throttle(1000)
             .do(function(p) {
                 console.log(p.toString());
@@ -418,4 +417,36 @@ $(document).ready(function() {
             $('#output').append('<div>' + text + '</div>');
         }
     });
+    
+    var mouseMoves = $(document).getEventStream('mousemove');
+    var fruit = EventStream.fromArray('fruit flies like a banana');
+    fruit.addCounter()
+    .transform(function(next) {
+        return {
+            count: next.count,
+            span: $('<span/>', {
+                text: next.next,
+                css: {
+                    position: 'absolute'
+                }
+            }).appendTo($('#container'))
+        };
+    })
+    .addStreamOn(
+        function(next) {
+            return true;
+        },
+        function(span, newStream) {
+            newStream.stop();
+            newStream.listenTo(mouseMoves);
+            newStream.delay(span.count * 100)
+            .do(function(next) {
+                span.span.css({
+                    top: next.offsetY + 'px',
+                    left: next.offsetX + span.count * 10 + 15 + 'px'
+                });
+            });
+        }
+    );
+    fruit.start();
 });

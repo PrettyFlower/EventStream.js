@@ -1,8 +1,15 @@
 function EventStream(onNext, parents) {
     var self = this;
     this.listeners = {};
-    this.onNext = function() {
-        onNext.apply(self, arguments);
+    if(onNext) {
+        this.onNext = function() {
+            onNext.apply(self, arguments);
+        }
+    }
+    else {
+        this.onNext = function(next) {
+            self._notifyListeners.call(self, next);
+        }
     }
     this.parents = {};
     for(var p in parents) {
@@ -43,9 +50,7 @@ EventStream.fromAnimationFrame = function(args) {
 };
 
 EventStream.fromArray = function(arr) {
-    var s = new EventStream(function(next) {
-        this._notifyListeners(next);
-    });
+    var s = new EventStream();
     s.start = function() {
         for(var i = 0; i < arr.length; i++) {
             if(this.stopArray) {
@@ -73,10 +78,21 @@ EventStream.fromInterval = function(ms, currentState) {
 };
 
 EventStream.fromOnMessager = function(ws) {
-    var s = new EventStream(function (event) {
-        this._notifyListeners(event);
-    });
+    var s = new EventStream();
     ws.onmessage = s.onNext;
+    return s;
+};
+
+EventStream.merge = function() {
+    var s = new EventStream(function(next, from) {
+        this._notifyListeners({
+            next: next,
+            from: from.id
+        });
+    });
+    for(var i = 0; i < arguments.length; i++) {
+        s.listenTo(arguments[i]);
+    }
     return s;
 };
 
@@ -88,21 +104,28 @@ EventStream.fromOnMessager = function(ws) {
  *          last pushed value is stored
  *      keySelector: required if buffer set to object;
  *          selects the key to use when buffering to an object
- *      clearFn: a function that takes in the next element and
+ *      clear: a function that takes in the next element and
  *          determines whether or not the cached/buffered 
- *          values should be cleared
- *      canPushFn: a function that takes in the next element
+ *          values should be cleared, or a bool to clear or 
+ *          not clear every time a new value is pushed to
+ *          the resulting stream
+ *      canPush: a function that takes in the next element
  *          and returns a bool to determine whether or not 
  *          the resulting stream can have this value pushed 
- *          to it or if it should be buffered/cached
+ *          to it or if it should be buffered/cached, or a 
+ *          bool to always push or never push the next value 
+ *          to the resulting stream
  * 
  * return:
  *      n1...nx: an array, object, or value depending on the 
  *          buffer type selected
  */
-EventStream.merge = function() {
+EventStream.bufferedMerge = function() {
     var obj = {};
     var streamArgs = {};
+    var count = 0;
+    var streamCount = arguments.length;
+    var allDone = false;
     for(var i = 0; i < arguments.length; i++) {
         var arg = arguments[i];
         streamArgs[arg.stream.id] = arg;
@@ -124,15 +147,30 @@ EventStream.merge = function() {
             obj[fromArgs.stream.id] = next;
         }
         
-        if(fromArgs.canPushFn(next)) {
-            var retObj = {};
-            for(var p in obj) {
-                retObj[p] = obj[p];
+        var retObj = {};
+        count = 0;
+        allDone = false;
+        for(var p in obj) {
+            retObj[p] = obj[p];
+            if(p != 'from') {
+                var isArray = $.isArray(obj[p]);
+                if(isArray && obj[p].length > 0) {
+                    count++;
+                }
+                else if(!isArray && !$.isEmptyObject(obj[p])) {
+                    count++;
+                }
             }
+        }
+        if(count == streamCount) allDone = true;
+        if((typeof fromArgs.canPush == 'boolean' && fromArgs.canPush) || 
+            (typeof fromArgs.canPush == 'function' && fromArgs.canPush(retObj)) ||
+            allDone) {
             this._notifyListeners(retObj);
             for(var a in streamArgs) {
                 var arg = streamArgs[a];
-                if(arg.clearFn(retObj)) {
+                if((typeof fromArgs.clear == 'boolean' && fromArgs.clear) || 
+                    (typeof fromArgs.clear == 'function' && fromArgs.clear(retObj))) {
                     if(arg.buffer == 'array') {
                         obj[arg.stream.id] = [];
                     }
@@ -234,6 +272,18 @@ EventStream.prototype = {
             if(buffer.length >= count) {
                 this._notifyListeners(buffer);
                 buffer.length = 0;
+            }
+        });
+    },
+    
+    bufferToObj: function(keySelector, pushFn) {
+        var bufferObj = {};
+        return this._newStream(function(next) {
+            var key = keySelector(next);
+            bufferObj[key] = next;
+            if(pushFn(bufferObj)) {
+                this._notifyListeners(bufferObj);
+                bufferObj = {};
             }
         });
     },

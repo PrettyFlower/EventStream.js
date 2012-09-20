@@ -234,17 +234,17 @@ a = [1, 2, 3, 4, 5];
 s1 = EventStream.fromArray(a);
 s2 = EventStream.fromArray(a);
 s3 = EventStream.fromArray(a);
-EventStream.merge(
+EventStream.bufferedMerge(
     {
         stream: s1,
-        clearFn: function(next) { return false; },
-        canPushFn: function(next) { return true; }
+        clear: false,
+        canPush: true
     },
     {
         stream: s2,
         buffer: 'array',
-        clearFn: function(next) { return false; },
-        canPushFn: function(next) { return false; }
+        clear: function(next) { return false; },
+        canPush: false
     },
     {
         stream: s3,
@@ -252,8 +252,8 @@ EventStream.merge(
         keySelector: function(next) {
             return next;
         },
-        clearFn: function(next) { return true; },
-        canPushFn: function(next) { return next == 5; }
+        clear: true,
+        canPush: function(next) { return next == 5; }
     }
 )
 .do(function(next) {

@@ -22,29 +22,26 @@ EventStream.nextId = 0;
 
 EventStream.init = function() {
     (function($) {
-        $.fn.getEventStream = function(eventType, currentState) {
+        $.fn.getEventStream = function(eventType) {
             var s = new EventStream(function(event) {
-                event.currentState = this.currentState;
                 this._notifyListeners(event);
             });
-            s.currentState = currentState;
             this.bind(eventType, s.onNext);
             return s;
         };
     })(jQuery);
 };
 
-EventStream.fromAnimationFrame = function(args) {
+EventStream.fromAnimationFrame = function() {
     var s = new EventStream(function(timestamp) {
         if(!this.stopAnimation) {
             requestAnimFrame(this.onNext);
-            this._notifyListeners(this.args);
+            this._notifyListeners(timestamp);
         }
     });
     s.stop = function() {
         this.stopAnimation = true;
     }
-    s.args = args;
     s.onNext();
     return s;
 };
@@ -65,11 +62,10 @@ EventStream.fromArray = function(arr) {
     return s;
 };
 
-EventStream.fromInterval = function(ms, currentState) {
+EventStream.fromInterval = function(ms) {
     var s = new EventStream(function () {
-        this._notifyListeners(this.currentState);
+        this._notifyListeners();
     });
-    s.currentState = currentState;
     var interval = setInterval(s.onNext, ms);
     s.stop = function() {
         clearInterval(interval);
@@ -169,8 +165,8 @@ EventStream.bufferedMerge = function() {
             this._notifyListeners(retObj);
             for(var a in streamArgs) {
                 var arg = streamArgs[a];
-                if((typeof fromArgs.clear == 'boolean' && fromArgs.clear) || 
-                    (typeof fromArgs.clear == 'function' && fromArgs.clear(retObj))) {
+                if((typeof arg.clear == 'boolean' && arg.clear) || 
+                    (typeof arg.clear == 'function' && arg.clear(retObj))) {
                     if(arg.buffer == 'array') {
                         obj[arg.stream.id] = [];
                     }

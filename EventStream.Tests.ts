@@ -1,33 +1,12 @@
-// from http://paulirish.com/2011/requestanimationframe-for-smart-animating/
-// shim layer with setTimeout fallback
-window.requestAnimFrame = (function(){
-    return  window.requestAnimationFrame       || 
-            window.webkitRequestAnimationFrame || 
-            window.mozRequestAnimationFrame    || 
-            window.oRequestAnimationFrame      || 
-            window.msRequestAnimationFrame     || 
-            function( callback ){
-            window.setTimeout(callback, 1000 / 60);
-            };
-})();
+/// <reference path="EventStream.ts" />
 
-Array.prototype.contains = function(o, f) {
-    if(!f) f = function(a, b) {
-        return a === b;
-    }
-    for(var i = 0; i < this.length; i++) {
-        if(f(o, this[i])) return true;
-    }
-    return false;
-}
-
-function printArray(arr) {
+function printArray(arr: any[]) {
     for(var i = 0; i < arr.length; i++) {
         console.log('\t' + arr[i]);
     }
 }
 
-function checkArrays(a, b, components) {
+function checkArrays(a: any[], b: any[], components: string[]) {
     var success = true;
     for(var i = 0; success && i < Math.max(a.length, b.length); i++) {
         if(a[i] !== b[i]) {
@@ -69,7 +48,7 @@ checkArrays(a, b, [
 
 a = [0, 1, 2, 3, 4];
 b.length = 0;
-var s = EventStream.fromArray(a);
+s = EventStream.fromArray(a);
 s.addCounter()
 .do(function(next) {
     b.push(next.count);
@@ -101,7 +80,7 @@ checkArrays(a, b, [
 ]);
 
 var ajaxResult = '';
-var s = EventStream.fromArray([1]);
+s = EventStream.fromArray([1]);
 s.ajax({
     url: 'index.html'
 })
@@ -122,10 +101,10 @@ s.do(function(next) {
 s.start();
 
 var syncFinished;
-var s = EventStream.fromArray([1]);
+s = EventStream.fromArray([1]);
 s.async('worker.js')
 .do(function(next) {
-    var diff = Math.abs(syncFinished - new Date() * 1);
+    var diff = Math.abs(syncFinished - new Date().getTime());
     if(diff > 100) {
         console.log('Failed: EventStream.async');
         console.log(diff);
@@ -136,12 +115,12 @@ s.async('worker.js')
 });
 s.delay(1000)
 .do(function(next) {
-    syncFinished = new Date() * 1;
+    syncFinished = new Date().getTime();
 });
 s.start();
 
 
-s = EventStream.fromArray([new Date() * 1]);
+s = EventStream.fromArray([new Date().getTime()]);
 s.block(function(next, callback) {
     var interval = window.setInterval(function() {
         window.clearInterval(interval);
@@ -149,9 +128,9 @@ s.block(function(next, callback) {
     }, 1000);
 })
 .do(function(next) {
-    if(!next || new Date() * 1 - next < 500) {
+    if(!next || new Date().getTime() - next < 500) {
         console.log('Failed: EventStream.block');
-        console.log((new Date() * 1) + ', ' + next);
+        console.log((new Date().getTime()) + ', ' + next);
     }
     else {
         console.log('Passed: EventStream.block');
@@ -171,10 +150,10 @@ checkArrays(a, b, [
     'EventStream.buffer'
 ]);
 
-s = EventStream.fromArray([new Date() * 1]);
+s = EventStream.fromArray([new Date().getTime()]);
 s.delay(1000)
 .do(function(next) {
-    if(new Date() * 1 - next < 500) {
+    if(new Date().getTime() - next < 500) {
         console.log('Failed: EventStream.delay');
     }
     else {
@@ -231,9 +210,10 @@ else {
 }
 
 a = [1, 2, 3, 4, 5];
-s1 = EventStream.fromArray(a);
-s2 = EventStream.fromArray(a);
-s3 = EventStream.fromArray(a);
+var s1 = EventStream.fromArray(a);
+var s2 = EventStream.fromArray(a);
+var s3 = EventStream.fromArray(a);
+var answer = null;
 EventStream.bufferedMerge(
     {
         stream: s1,
@@ -253,7 +233,7 @@ EventStream.bufferedMerge(
             return next;
         },
         clear: true,
-        canPush: function(next) { return next == 5; }
+        canPush: function(next) { return next[s3.id][5] == 5; }
     }
 )
 .do(function(next) {
@@ -263,11 +243,11 @@ s1.start();
 s2.start();
 s3.start();
 if(answer[s1.id] !== 5 || answer[s2.id].length !== 5 || answer[s3.id][1] !== 1) {
-    console.log('Failed: EventStream.merge');
+    console.log('Failed: EventStream.bufferedMerge');
     console.log(answer);
 }
 else {
-    console.log('Passed: EventStream.merge');
+    console.log('Passed: EventStream.bufferedMerge');
 }
 
 a = [1, 2, 3, 4, 5, 6];
@@ -336,7 +316,7 @@ s.filter(function(next) {
 
 answer = -1;
 s = EventStream.fromAnimationFrame();
-var count = 0;
+count = 0;
 s.transform(function(next) {
     count++;
     if(count == 10) {
@@ -370,7 +350,7 @@ ws.onerror = function(event){
     console.log('Failed: EventStream.fromWebMessager');
     console.log(event);
 }
-wss = EventStream.fromOnMessager(ws);
+var wss = EventStream.fromOnMessager(ws);
 wss.do(function(event) {
     if(event.data == 'hi') {
         console.log('Passed: EventStream.fromWebMessager');
@@ -419,7 +399,7 @@ $(document).ready(function() {
     });
     
     var mouseMoves = $(document).getEventStream('mousemove');
-    var fruit = EventStream.fromArray('fruit flies like a banana');
+    var fruit = EventStream.fromArray('fruit flies like a banana'.split(''));
     fruit.addCounter()
     .transform(function(next) {
         return {

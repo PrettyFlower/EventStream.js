@@ -244,12 +244,13 @@ class EventStream {
         });
     }
     
-    bufferToObj(keySelector: (next) => string, pushFn: (next) => bool) {
+    bufferToObj(keySelector: (next) => string, canPush: (next) => bool) {
+        //var bufferObj: { [key: string]: string } = {};
         var bufferObj = {};
         return this._newStream(function(next) {
             var key = keySelector(next);
             bufferObj[key] = next;
-            if(pushFn(bufferObj)) {
+            if(canPush(bufferObj)) {
                 this._notifyListeners(bufferObj);
                 bufferObj = {};
             }

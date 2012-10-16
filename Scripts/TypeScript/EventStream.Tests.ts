@@ -102,7 +102,7 @@ s.start();
 
 var syncFinished;
 s = EventStream.fromArray([1]);
-s.async('worker.js')
+s.async('Scripts/JS/worker.js')
 .do(function(next) {
     var diff = Math.abs(syncFinished - new Date().getTime());
     if(diff > 100) {

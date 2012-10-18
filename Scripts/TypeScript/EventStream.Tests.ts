@@ -50,7 +50,7 @@ a = [0, 1, 2, 3, 4];
 b.length = 0;
 s = EventStream.fromArray(a);
 s.addCounter()
-.do(function(next) {
+.do(function(next: CounterObj) {
     b.push(next.count);
 });
 s.start();
@@ -62,14 +62,14 @@ a = [1, 2, 3, 4, 5, 6];
 s = EventStream.fromArray(a);
 b.length = 0;
 s.addStreamOn(
-    function(next) {
+    function(next: number) {
         return next == 3;
     },
     function(next, newStream) {
         newStream.do(pushFn);
     }
 )
-.filter(function(next) {
+.filter(function(next: number) {
     return next <= 2;
 })
 .do(pushFn);
@@ -84,7 +84,7 @@ s = EventStream.fromArray([1]);
 s.ajax({
     url: 'index.html'
 })
-.do(function(next) {
+.do(function(next: string) {
     ajaxResult += next.slice(0, 9);
     if(ajaxResult != 'hi<!DOCTYPE') {
         console.log('Failed: EventStream.ajax');
@@ -95,7 +95,7 @@ s.ajax({
     }
 });
 
-s.do(function(next) {
+s.do(function(next: string) {
     ajaxResult += 'hi';
 });
 s.start();
@@ -121,13 +121,13 @@ s.start();
 
 
 s = EventStream.fromArray([new Date().getTime()]);
-s.block(function(next, callback) {
+s.block(function(next: number, callback: (n: number) => void) {
     var interval = window.setInterval(function() {
         window.clearInterval(interval);
         callback(next);
     }, 1000);
 })
-.do(function(next) {
+.do(function(next: number) {
     if(!next || new Date().getTime() - next < 500) {
         console.log('Failed: EventStream.block');
         console.log((new Date().getTime()) + ', ' + next);
@@ -141,7 +141,7 @@ s.start();
 s = EventStream.fromArray(a);
 b.length = 0;
 s.buffer(2)
-.do(function(arr) {
+.do(function(arr: number[]) {
     b.push(arr[0]);
     b.push(arr[1]);
 });
@@ -152,7 +152,7 @@ checkArrays(a, b, [
 
 s = EventStream.fromArray([new Date().getTime()]);
 s.delay(1000)
-.do(function(next) {
+.do(function(next: number) {
     if(new Date().getTime() - next < 500) {
         console.log('Failed: EventStream.delay');
     }
@@ -167,7 +167,7 @@ a = [1, 2, 3, 3, 4];
 s = EventStream.fromArray(a);
 s.distinct()
 .do(function() {
-    count++;   
+    count++;
 });
 s.start();
 if(count != 4) {
@@ -188,12 +188,12 @@ var g = {
 s = EventStream.fromArray(a);
 b.length = 0;
 s.groupBy(
-    function(next) {
+    function(next: number) {
         return next;
     },
-    function(next, newStream) {
+    function(next: number, newStream: EventStream) {
         b.push(next);
-        newStream.do(function(next) {
+        newStream.do(function(next: number) {
             g[next].push(next);
         });
     }
@@ -213,7 +213,7 @@ a = [1, 2, 3, 4, 5];
 var s1 = EventStream.fromArray(a);
 var s2 = EventStream.fromArray(a);
 var s3 = EventStream.fromArray(a);
-var answer = null;
+var answer: {};
 EventStream.bufferedMerge(
     {
         stream: s1,
@@ -233,11 +233,11 @@ EventStream.bufferedMerge(
             return next;
         },
         clear: true,
-        canPush: function(next) { return next[s3.id][5] == 5; }
+        canPush: function(next: BufferedMergeObj) { return next.next[s3.id][5] == 5; }
     }
 )
-.do(function(next) {
-    answer = next;
+.do(function(next: BufferedMergeObj) {
+    answer = next.next;
 });
 s1.start();
 s2.start();
@@ -253,7 +253,7 @@ else {
 a = [1, 2, 3, 4, 5, 6];
 b = [];
 s = EventStream.fromArray(a);
-s.stopOn(function(next) {
+s.stopOn(function(next: number) {
     return next == 5;
 })
 .do(pushFn);
@@ -278,7 +278,7 @@ checkArrays(a, b, [
 a = [1, 2, 3, 4, 5];
 b = [];
 s = EventStream.fromArray(a);
-s.transform(function(next) {
+s.transform(function(next: number) {
     return next + 1;
 })
 .do(pushFn);
@@ -293,13 +293,13 @@ checkArrays(a, b, [
 answer = -1;
 s = EventStream.fromInterval(10);
 s.throttle(1000)
-.do(function(next) {
+.do(function(next: number) {
     answer = next;
 });
-s.stopOn(function(next) {
+s.stopOn(function(next: number) {
     return next == 10;
 });
-s.filter(function(next) {
+s.filter(function(next: number) {
     return next == 10;
 })
 .do(function(next) {
@@ -325,7 +325,7 @@ s.transform(function(next) {
     return count;
 })
 .waitForPause(1000)
-.do(function(next) {
+.do(function(next: number) {
     answer = next;
     if(answer != 10) {
         console.log('Failed: EventStream.fromAnimationFrame');
@@ -381,7 +381,7 @@ $(document).ready(function() {
         function(next) {
             return next.y * 1000 + next.x;
         },
-        function(next, newStream) {
+        function(next, newStream: EventStream) {
             newStream.throttle(1000)
             .do(function(p) {
                 console.log(p.toString());

@@ -77,7 +77,7 @@ class EventStream {
         return s;
     }
     
-    static fromOnMessager(messager: onMessager) {
+    static fromOnMessager(messager: OnMessager) {
         var s = new EventStream();
         messager.onmessage = s.onNext;
         return s;
@@ -85,7 +85,7 @@ class EventStream {
     
     static merge(...streams: EventStream[]) {
         var s = new EventStream(function(next, from: EventStream) {
-            this._notifyListeners(new mergeObj(next, from.id));
+            this._notifyListeners(new MergeObj(next, from.id));
         });
         for(var i = 0; i < streams.length; i++) {
             s.listenTo(streams[i]);
@@ -93,8 +93,8 @@ class EventStream {
         return s;
     }
     
-    static bufferedMerge(...args: bufferedMergeArg[]) {
-        var obj = {};
+    static bufferedMerge(...args: BufferedMergeArg[]) {
+        var obj = new BufferedMergeObj();
         var streamArgs = {};
         var count = 0;
         var streamCount = args.length;
@@ -107,32 +107,31 @@ class EventStream {
             var fromArgs = streamArgs[from.id];
             fromArgs.pushed = true;
             
-            obj['from'] = from.id;
+            obj.from = from.id;
             
             if(fromArgs.buffer == 'array') {
-                obj[fromArgs.stream.id].push(next);
+                obj.next[fromArgs.stream.id].push(next);
             }
             else if(fromArgs.buffer == 'object') {
                 var key = streamArgs[fromArgs.stream.id].keySelector(next);
-                obj[fromArgs.stream.id][key] = next;
+                obj.next[fromArgs.stream.id][key] = next;
             }
             else {
-                obj[fromArgs.stream.id] = next;
+                obj.next[fromArgs.stream.id] = next;
             }
             
-            var retObj = {};
+            var retObj = new BufferedMergeObj();
             count = 0;
             allDone = false;
-            for(var p in obj) {
-                retObj[p] = obj[p];
-                if(p != 'from') {
-                    var isArray = $.isArray(obj[p]);
-                    if(isArray && obj[p].length > 0) {
-                        count++;
-                    }
-                    else if(!isArray && !$.isEmptyObject(obj[p])) {
-                        count++;
-                    }
+            retObj.from = obj.from;
+            for(var p in obj.next) {
+                retObj.next[p] = obj.next[p];
+                var isArray = $.isArray(obj.next[p]);
+                if(isArray && obj.next[p].length > 0) {
+                    count++;
+                }
+                else if(!isArray && !$.isEmptyObject(obj.next[p])) {
+                    count++;
                 }
             }
             if(count == streamCount) allDone = true;
@@ -145,13 +144,13 @@ class EventStream {
                     if((typeof arg.clear == 'boolean' && arg.clear) || 
                         (typeof arg.clear == 'function' && arg.clear(retObj))) {
                         if(arg.buffer == 'array') {
-                            obj[arg.stream.id] = [];
+                            obj.next[arg.stream.id] = [];
                         }
                         else if(arg.buffer == 'object') {
-                            obj[arg.stream.id] = {};
+                            obj.next[arg.stream.id] = {};
                         }
                         else {
-                            delete obj[arg.stream.id];
+                            delete obj.next[arg.stream.id];
                         }
                     }
                 }
@@ -162,10 +161,10 @@ class EventStream {
             var arg = streamArgs[a];
             s.listenTo(arg.stream);
             if(arg.buffer == 'array') {
-                obj[arg.stream.id] = [];
+                obj.next[arg.stream.id] = [];
             }
             else if(arg.buffer == 'object') {
-                obj[arg.stream.id] = {};
+                obj.next[arg.stream.id] = {};
             }
         }
         return s;
@@ -186,10 +185,7 @@ class EventStream {
     addCounter() {
         var count = 0;
         var s = this._newStream(function(next) {
-            this._notifyListeners({
-                next: next,
-                count: count
-            });
+            this._notifyListeners(new CounterObj(next, count));
             count++;
         });
         return s;
@@ -245,8 +241,7 @@ class EventStream {
     }
     
     bufferToObj(keySelector: (next) => string, canPush: (next) => bool) {
-        //var bufferObj: { [key: string]: string } = {};
-        var bufferObj = {};
+        var bufferObj: { [key: string]: any; } = {};
         return this._newStream(function(next) {
             var key = keySelector(next);
             bufferObj[key] = next;
@@ -391,11 +386,17 @@ class EventStream {
     }
 }
 
-interface onMessager {
+class CounterObj {
+    constructor(public next, public count: number) {
+        
+    }
+}
+
+interface OnMessager {
     onmessage: (...) => void;
 }
 
-class mergeObj {
+class MergeObj {
     constructor(public next, public from: number) {
         
     }
@@ -425,10 +426,16 @@ class mergeObj {
 *      n1...nx: an array, object, or value depending on the 
 *          buffer type selected
 */
-interface bufferedMergeArg {
+interface BufferedMergeArg {
     stream: EventStream;
     buffer?: string;
     keySelector?: (next) => string;
     clear?;
     canPush?;
+    pushed?;
+}
+
+class BufferedMergeObj {
+    next: {} = {};
+    from: number;
 }
